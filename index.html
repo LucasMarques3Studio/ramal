@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Filtro de Dados da Planilha com API</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="bg-white shadow-lg rounded-2xl p-6">
+            
+            <div class="mb-6 text-center">
+                <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Visualizador de Dados da Planilha</h1>
+                <p class="text-gray-500 mt-1">Busque e filtre os dados em tempo real usando a API do Google Sheets.</p>
+            </div>
+
+            <div class="mb-6">
+                <label for="filterInput" class="sr-only">Filtrar</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <input type="text" id="filterInput" class="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-300 text-gray-900 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200" placeholder="Digite para filtrar em qualquer coluna...">
+                </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr id="tableHeader"></tr>
+                    </thead>
+                    <tbody id="tableBody" class="bg-white divide-y divide-gray-200"></tbody>
+                </table>
+                <div id="messageArea" class="text-center p-10 hidden">
+                    <div id="loader" class="loader mx-auto"></div>
+                    <p id="messageText" class="mt-4 text-gray-500"></p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // --- INFORMAÇÕES NECESSÁRIAS ---
+            // 1. Cole sua Chave de API do Google Cloud Console aqui.
+            const API_KEY = 'AIzaSyCRNbVTj1QfMPPg2ExQ3SWhysi66CWYIj0'; 
+
+            // 2. Cole o ID da sua planilha aqui.
+            const SPREADSHEET_ID = '1QKJR51qbdfpA9y4Oc4f0q_JZQPd3-JEwyN1BEuDZZDE';
+
+            // 3. Especifique o nome da aba e o intervalo que deseja ler. Ex: 'Página1!A:E' para ler as colunas A até E.
+            const RANGE = 'RAMAL!A:Z'; 
+            // --- FIM DAS INFORMAÇÕES ---
+
+            const tableHeader = document.getElementById('tableHeader');
+            const tableBody = document.getElementById('tableBody');
+            const filterInput = document.getElementById('filterInput');
+            const messageArea = document.getElementById('messageArea');
+            const loader = document.getElementById('loader');
+            const messageText = document.getElementById('messageText');
+            
+            let allData = [];
+            let headers = [];
+
+            function showMessage(text, showLoader = false) {
+                tableBody.innerHTML = '';
+                messageArea.classList.remove('hidden');
+                messageText.textContent = text;
+                loader.style.display = showLoader ? 'block' : 'none';
+            }
+
+            function hideMessage() {
+                messageArea.classList.add('hidden');
+            }
+
+            /**
+             * Converte a resposta JSON da API em um array de objetos.
+             * @param {Array<Array<string>>} values - O array de valores da API.
+             * @returns {Array<Object>} - Um array de objetos, onde cada objeto representa uma linha.
+             */
+            function parseJsonResponse(values) {
+                if (!values || values.length < 1) {
+                    return [];
+                }
+                headers = values.shift(); // A primeira linha é o cabeçalho
+                return values.map(row => {
+                    return headers.reduce((obj, header, index) => {
+                        obj[header] = row[index] || ''; // Garante que a célula vazia seja uma string vazia
+                        return obj;
+                    }, {});
+                });
+            }
+
+            function renderTable(data) {
+                hideMessage();
+                tableBody.innerHTML = '';
+
+                if (data.length === 0) {
+                    showMessage('Nenhum resultado encontrado para o seu filtro.', false);
+                    return;
+                }
+
+                data.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-gray-50 transition-colors duration-200';
+                    headers.forEach(header => {
+                        const td = document.createElement('td');
+                        td.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-600';
+                        td.textContent = row[header];
+                        tr.appendChild(td);
+                    });
+                    tableBody.appendChild(tr);
+                });
+            }
+
+            async function fetchData() {
+                if (API_KEY === 'SUA_CHAVE_DE_API_AQUI') {
+                    showMessage('Por favor, adicione sua Chave de API no código JavaScript.', false);
+                    return;
+                }
+                
+                showMessage('Carregando dados da planilha...', true);
+                const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${RANGE}?key=${API_KEY}`;
+
+                try {
+                    const response = await fetch(apiUrl);
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        // Tenta extrair a mensagem de erro da API do Google
+                        const errorMsg = data.error ? data.error.message : response.statusText;
+                        throw new Error(errorMsg);
+                    }
+                    
+                    allData = parseJsonResponse(data.values);
+
+                    tableHeader.innerHTML = '';
+                    headers.forEach(header => {
+                        const th = document.createElement('th');
+                        th.scope = 'col';
+                        th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                        th.textContent = header;
+                        tableHeader.appendChild(th);
+                    });
+                    
+                    renderTable(allData);
+
+                } catch (error) {
+                    console.error('Falha ao buscar dados:', error);
+                    showMessage(`Erro ao carregar dados: ${error.message}. Verifique sua Chave de API, ID da Planilha e se a API Google Sheets está ativada.`, false);
+                }
+            }
+
+            function filterData() {
+                const filterText = filterInput.value.toLowerCase();
+                
+                if (!filterText) {
+                    renderTable(allData);
+                    return;
+                }
+
+                const filteredData = allData.filter(row => {
+                    return Object.values(row).some(value => 
+                        String(value).toLowerCase().includes(filterText)
+                    );
+                });
+
+                renderTable(filteredData);
+            }
+
+            filterInput.addEventListener('input', filterData);
+            fetchData();
+        });
+    </script>
+
+</body>
+</html>
